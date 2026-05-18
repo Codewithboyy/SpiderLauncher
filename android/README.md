@@ -1,6 +1,6 @@
 # SpiderLauncher — Android 🕷️📱
 
-[![Android CI/CD](https://github.com/yourusername/SpiderLauncher/actions/workflows/android-ci.yml/badge.svg)](https://github.com/yourusername/SpiderLauncher/actions/workflows/android-ci.yml)
+[![Android CI/CD](https://github.com/codewithboyy/SpiderLauncher/actions/workflows/android-ci.yml/badge.svg)](https://github.com/codewithboyy/SpiderLauncher/actions/workflows/android-ci.yml)
 
 A native Android launcher for Minecraft Java Edition, built with **Kotlin + Jetpack Compose** and automated end-to-end with **GitHub Actions**.
 
