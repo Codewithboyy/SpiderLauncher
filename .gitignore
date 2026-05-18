@@ -19,3 +19,6 @@ release.keystore
 google-services.json
 service-account.json
 *.env
+keystore.txt
+*.jks
+*.keystore
