@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="spider_green">#2ECC71</color>
+    <color name="spider_dark_green">#27AE60</color>
+    <color name="spider_dark">#0D1117</color>
+    <color name="spider_surface">#161B22</color>
+    <color name="spider_card">#21262D</color>
+    <color name="white">#FFFFFF</color>
+    <color name="error_red">#F85149</color>
+</resources>
