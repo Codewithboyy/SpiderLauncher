@@ -17,7 +17,7 @@ env:
 jobs:
 
   lint:
-    name: Lint & Static Analysis
+    name: Lint
     runs-on: ubuntu-latest
 
     steps:
@@ -29,21 +29,21 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
-          
-      - name: Grant Gradle Permission
-        run: echo "No wrapper permission needed"
 
-      - name: Run Android Lint
-        run: gradle lint --stacktrace
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
-      - name: Upload lint reports
+      - name: Run Lint
+        run: gradle-8.8 lint --stacktrace
+
+      - name: Upload Lint Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lint-reports
           path: app/build/reports/
-          retention-days: 14
 
   unit-test:
     name: Unit Tests
@@ -58,13 +58,14 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Grant Gradle Permission
-        run: echo "No wrapper permission needed"
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
       - name: Run Unit Tests
-        run: gradle testDebugUnitTest --stacktrace
+        run: gradle-8.8 testDebugUnitTest --stacktrace
 
       - name: Upload Test Results
         if: always()
@@ -72,7 +73,6 @@ jobs:
         with:
           name: unit-test-results
           path: app/build/reports/tests/
-          retention-days: 14
 
   build-debug:
     name: Build Debug APK
@@ -88,20 +88,20 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Grant Gradle Permission
-        run: echo "No wrapper permission needed"
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle-8.8 assembleDebug --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: SpiderLauncher-debug-APK
           path: app/build/outputs/apk/debug/*.apk
-          retention-days: 30
 
   build-release:
     name: Build Release APK
@@ -119,10 +119,11 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Grant Gradle Permission
-        run: echo "No wrapper permission needed"
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
       - name: Decode Keystore
         env:
@@ -137,7 +138,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease --stacktrace
+        run: gradle-8.8 assembleRelease --stacktrace
 
       - name: Build Release AAB
         env:
@@ -145,24 +146,22 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew bundleRelease --stacktrace
+        run: gradle-8.8 bundleRelease --stacktrace
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: SpiderLauncher-release-APK
           path: app/build/outputs/apk/release/*.apk
-          retention-days: 60
 
       - name: Upload Release AAB
         uses: actions/upload-artifact@v4
         with:
           name: SpiderLauncher-release-AAB
           path: app/build/outputs/bundle/release/*.aab
-          retention-days: 60
 
   github-release:
-    name: Create GitHub Release
+    name: GitHub Release
     runs-on: ubuntu-latest
     needs: [build-release]
 
@@ -172,13 +171,13 @@ jobs:
       contents: write
 
     steps:
-      - name: Download APK Artifact
+      - name: Download APK
         uses: actions/download-artifact@v4
         with:
           name: SpiderLauncher-release-APK
           path: release-artifacts/
 
-      - name: Download AAB Artifact
+      - name: Download AAB
         uses: actions/download-artifact@v4
         with:
           name: SpiderLauncher-release-AAB
