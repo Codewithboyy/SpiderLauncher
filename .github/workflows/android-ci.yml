@@ -36,7 +36,7 @@ jobs:
           gradle-version: 8.8
 
       - name: Run Lint
-        run: gradle-8.8 lint --stacktrace
+        run: gradle lint --stacktrace
 
       - name: Upload Lint Reports
         if: always()
@@ -65,7 +65,7 @@ jobs:
           gradle-version: 8.8
 
       - name: Run Unit Tests
-        run: gradle-8.8 testDebugUnitTest --stacktrace
+        run: gradle testDebugUnitTest --stacktrace
 
       - name: Upload Test Results
         if: always()
@@ -95,7 +95,7 @@ jobs:
           gradle-version: 8.8
 
       - name: Build Debug APK
-        run: gradle-8.8 assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -138,7 +138,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle-8.8 assembleRelease --stacktrace
+        run: gradle assembleRelease --stacktrace
 
       - name: Build Release AAB
         env:
@@ -146,7 +146,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle-8.8 bundleRelease --stacktrace
+        run: gradle bundleRelease --stacktrace
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
