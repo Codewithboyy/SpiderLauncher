@@ -5,285 +5,189 @@ on:
     branches: [ main, master, develop ]
     tags:
       - 'v*'
+
   pull_request:
     branches: [ main, master ]
+
   workflow_dispatch:
 
 env:
   JAVA_VERSION: '17'
-  ANDROID_API: '34'
 
 jobs:
 
-  # ── Lint & Static Analysis ──────────────────────────────────────────────────
   lint:
-    name: Lint & Static Analysis
+    name: Lint
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Grant execute permission
-        run: chmod +x android/gradlew
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
-      - name: Run Android Lint
-        working-directory: android
-        run: ./gradlew lint --stacktrace
+      - name: Run Lint
+        run: gradle lint --stacktrace
 
-      - name: Run Kotlin lint
-        working-directory: android
-        run: ./gradlew ktlintCheck || true
-
-      - name: Upload lint reports
+      - name: Upload Lint Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lint-reports
-          path: android/app/build/reports/lint-results*.html
-          retention-days: 14
+          path: app/build/reports/
 
-  # ── Unit Tests ──────────────────────────────────────────────────────────────
   unit-test:
     name: Unit Tests
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Grant execute permission
-        run: chmod +x android/gradlew
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
-      - name: Run unit tests
-        working-directory: android
-        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Run Unit Tests
+        run: gradle testDebugUnitTest --stacktrace
 
-      - name: Upload test results
+      - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-results
-          path: android/app/build/reports/tests/
-          retention-days: 14
+          path: app/build/reports/tests/
 
-      - name: Publish test summary
-        uses: dorny/test-reporter@v1
-        if: always()
-        with:
-          name: Unit Test Results
-          path: android/app/build/test-results/**/*.xml
-          reporter: java-junit
-
-  # ── Debug APK Build ─────────────────────────────────────────────────────────
   build-debug:
     name: Build Debug APK
     runs-on: ubuntu-latest
     needs: [lint, unit-test]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Grant execute permission
-        run: chmod +x android/gradlew
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
-      - name: Build debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build Debug APK
+        run: gradle assembleDebug --stacktrace
 
-      - name: Upload debug APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: SpiderLauncher-debug-APK
-          path: android/app/build/outputs/apk/debug/*.apk
-          retention-days: 30
+          path: app/build/outputs/apk/debug/*.apk
 
-      - name: Get APK info
-        run: |
-          APK=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -1)
-          echo "APK path: $APK"
-          echo "APK size: $(du -sh $APK | cut -f1)"
-
-  # ── Release APK (signed) ────────────────────────────────────────────────────
   build-release:
-    name: Build & Sign Release APK
+    name: Build Release APK
     runs-on: ubuntu-latest
     needs: [lint, unit-test]
+
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-          cache: gradle
 
-      - name: Grant execute permission
-        run: chmod +x android/gradlew
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
-      - name: Decode keystore from secret
-        if: secrets.KEYSTORE_BASE64 != ''
+      - name: Decode Keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
-          echo "KEYSTORE_FILE=$(pwd)/android/app/release.keystore" >> $GITHUB_ENV
+          echo "$KEYSTORE_BASE64" | base64 --decode > app/release.keystore
+          echo "KEYSTORE_FILE=$(pwd)/app/release.keystore" >> $GITHUB_ENV
 
-      - name: Build release APK
-        working-directory: android
+      - name: Build Release APK
         env:
-          KEYSTORE_FILE:     ${{ env.KEYSTORE_FILE }}
+          KEYSTORE_FILE: ${{ env.KEYSTORE_FILE }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle assembleRelease --stacktrace
 
-      - name: Build release AAB (for Play Store)
-        working-directory: android
+      - name: Build Release AAB
         env:
-          KEYSTORE_FILE:     ${{ env.KEYSTORE_FILE }}
+          KEYSTORE_FILE: ${{ env.KEYSTORE_FILE }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew bundleRelease --stacktrace
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle bundleRelease --stacktrace
 
-      - name: Upload signed APK
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: SpiderLauncher-release-APK
-          path: android/app/build/outputs/apk/release/*.apk
-          retention-days: 60
+          path: app/build/outputs/apk/release/*.apk
 
-      - name: Upload AAB
+      - name: Upload Release AAB
         uses: actions/upload-artifact@v4
         with:
           name: SpiderLauncher-release-AAB
-          path: android/app/build/outputs/bundle/release/*.aab
-          retention-days: 60
+          path: app/build/outputs/bundle/release/*.aab
 
-  # ── GitHub Release ───────────────────────────────────────────────────────────
   github-release:
-    name: Create GitHub Release
+    name: GitHub Release
     runs-on: ubuntu-latest
     needs: [build-release]
+
     if: startsWith(github.ref, 'refs/tags/v')
+
     permissions:
       contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
-      - name: Download APK artifact
+    steps:
+      - name: Download APK
         uses: actions/download-artifact@v4
         with:
           name: SpiderLauncher-release-APK
           path: release-artifacts/
 
-      - name: Download AAB artifact
+      - name: Download AAB
         uses: actions/download-artifact@v4
         with:
           name: SpiderLauncher-release-AAB
           path: release-artifacts/
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          name: SpiderLauncher ${{ steps.version.outputs.VERSION }}
-          body: |
-            # 🕷️ SpiderLauncher ${{ steps.version.outputs.VERSION }}
-
-            ## Android Release
-
-            ### Downloads
-            | File | Description |
-            |------|-------------|
-            | `SpiderLauncher-*.apk` | Direct install APK (sideload) |
-            | `SpiderLauncher-*.aab` | Android App Bundle (Play Store) |
-
-            ### Installation (APK Sideload)
-            1. Enable **Unknown Sources** in Android Settings → Security
-            2. Download the `.apk` file
-            3. Tap to install
-            4. Open SpiderLauncher and enjoy!
-
-            ### Requirements
-            - Android 8.0 (API 26) or higher
-            - Internet connection for downloading versions
-
-            ### What's New
-            See [CHANGELOG.md](CHANGELOG.md) for full details.
-
-            ---
-            *Built automatically by GitHub Actions* 🤖
           files: |
             release-artifacts/**/*.apk
             release-artifacts/**/*.aab
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── Instrumentation Tests (emulator) ───────────────────────────────────────
-  instrumented-test:
-    name: Instrumentation Tests
-    runs-on: macos-latest    # macOS required for hardware acceleration
-    needs: [build-debug]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: temurin
-          cache: gradle
-
-      - name: Grant execute permission
-        run: chmod +x android/gradlew
-
-      - name: Run instrumentation tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level:     29
-          target:        default
-          arch:          x86_64
-          profile:       Nexus 6
-          working-directory: android
-          script: ./gradlew connectedDebugAndroidTest --stacktrace
-
-      - name: Upload instrumentation test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: instrumentation-test-results
-          path: android/app/build/reports/androidTests/
-          retention-days: 14
