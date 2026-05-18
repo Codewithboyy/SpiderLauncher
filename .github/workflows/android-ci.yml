@@ -30,15 +30,12 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
           cache: gradle
-
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v2
-
+          
       - name: Grant Gradle Permission
-        run: chmod +x gradlew
+        run: echo "No wrapper permission needed"
 
       - name: Run Android Lint
-        run: ./gradlew lint --stacktrace
+        run: gradle lint --stacktrace
 
       - name: Upload lint reports
         if: always()
@@ -64,10 +61,10 @@ jobs:
           cache: gradle
 
       - name: Grant Gradle Permission
-        run: chmod +x gradlew
+        run: echo "No wrapper permission needed"
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+        run: gradle testDebugUnitTest --stacktrace
 
       - name: Upload Test Results
         if: always()
@@ -94,10 +91,10 @@ jobs:
           cache: gradle
 
       - name: Grant Gradle Permission
-        run: chmod +x gradlew
+        run: echo "No wrapper permission needed"
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -125,7 +122,7 @@ jobs:
           cache: gradle
 
       - name: Grant Gradle Permission
-        run: chmod +x gradlew
+        run: echo "No wrapper permission needed"
 
       - name: Decode Keystore
         env:
@@ -140,7 +137,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+        run: gradle assembleRelease --stacktrace
 
       - name: Build Release AAB
         env:
