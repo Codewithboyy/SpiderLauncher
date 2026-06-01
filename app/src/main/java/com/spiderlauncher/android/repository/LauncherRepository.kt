@@ -1,6 +1,7 @@
 package com.spiderlauncher.android.repository
 
 import android.content.Context
+import com.google.gson.Gson
 import com.spiderlauncher.android.model.DownloadState
 import com.spiderlauncher.android.model.VersionDetail
 import com.spiderlauncher.android.model.VersionEntry
@@ -74,7 +75,7 @@ class LauncherRepository(private val context: Context) {
             File(versionDir, "${detail.id}.json")
 
         jsonFile.writeText(
-            ApiClient.gson.toJson(detail)
+            Gson().toJson(detail)
         )
     }
 
