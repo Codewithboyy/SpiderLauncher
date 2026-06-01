@@ -62,6 +62,21 @@ class LauncherRepository(private val context: Context) {
                 Result.failure(e)
             }
         }
+        
+    suspend fun saveVersionJson(detail:         VersionDetail
+        ) {
+
+        val versionDir =
+            File(versionsDir, detail.id)
+                .also { it.mkdirs() }
+
+        val jsonFile =
+            File(versionDir, "${detail.id}.json")
+
+        jsonFile.writeText(
+            ApiClient.gson.toJson(detail)
+        )
+    }
 
     // ── Download Client JAR ─────────────────────────────────────────────────
     fun downloadClientJar(detail: VersionDetail): Flow<DownloadState> = flow {
