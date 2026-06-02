@@ -15,17 +15,30 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class LauncherUiState(
-    val isLoadingVersions: Boolean       = true,
-    val versions: List<VersionEntry>     = emptyList(),
+    val isLoadingVersions: Boolean = true,
+    val versions: List<VersionEntry> = emptyList(),
     val filteredVersions: List<VersionEntry> = emptyList(),
-    val selectedVersion: VersionEntry?   = null,
-    val showSnapshots: Boolean           = false,
-    val downloadedVersions: Set<String>  = emptySet(),
-    val downloadState: DownloadState     = DownloadState.Idle,
-    val launchState: LaunchState         = LaunchState.Idle,
-    val errorMessage: String?            = null,
-    val consoleLog: List<String>         = emptyList(),
-    val profile: Profile                 = Profile(
+    val selectedVersion: VersionEntry? = null,
+    val showSnapshots: Boolean = false,
+    val downloadedVersions: Set<String> = emptySet(),
+
+    val downloadState: DownloadState = DownloadState.Idle,
+    val launchState: LaunchState = LaunchState.Idle,
+
+    val errorMessage: String? = null,
+    val consoleLog: List<String> = emptyList(),
+
+    val overlayVisible: Boolean = false,
+    val showLogOutput: Boolean = false,
+    val showKeycodes: Boolean = false,
+    val showQuickSettings: Boolean = false,
+    val showCustomControls: Boolean = false,
+
+    val fpsCounterEnabled: Boolean = true,
+    val batterySaverEnabled: Boolean = false,
+    val performanceModeEnabled: Boolean = true,
+
+    val profile: Profile = Profile(
         id = "default",
         name = "Default Profile",
         username = "Player",
@@ -185,6 +198,67 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun clearDownloadState() {
         _uiState.update { it.copy(downloadState = DownloadState.Idle) }
+    }
+    
+    fun toggleOverlay() {
+        _uiState.update {
+            it.copy(
+                overlayVisible = !it.overlayVisible
+            )
+        }
+    }
+
+    fun showLogOutput() {
+        _uiState.update {
+            it.copy(
+                showLogOutput = true,
+                showKeycodes = false,
+                showQuickSettings = false,
+                showCustomControls = false
+            )
+        }
+    }
+
+    fun showKeycodes() {
+        _uiState.update {
+            it.copy(
+                showLogOutput = false,
+                showKeycodes = true,
+                showQuickSettings = false,
+                showCustomControls = false
+            )
+        }
+    }
+
+    fun showQuickSettings() {
+        _uiState.update {
+            it.copy(
+                showLogOutput = false,
+                showKeycodes = false,
+                showQuickSettings = true,
+                showCustomControls = false
+            )
+        }
+    }
+
+    fun showCustomControls() {
+        _uiState.update {
+            it.copy(
+                showLogOutput = false,
+                showKeycodes = false,
+                showQuickSettings = false,
+                showCustomControls = true
+            )
+        }
+    }
+
+    fun forceCloseGame() {
+        stopGame()
+        log("Force close requested")
+    }
+
+    fun sendKeycode(code: Int) {
+        log("Sent keycode: $code")
     }
 
     private fun log(message: String) {
