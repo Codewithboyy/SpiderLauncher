@@ -8,11 +8,24 @@ import com.spiderlauncher.android.model.LaunchState
 import com.spiderlauncher.android.model.Profile
 import com.spiderlauncher.android.model.VersionEntry
 import com.spiderlauncher.android.repository.LauncherRepository
+import com.spiderlauncher.android.runtime.RuntimeInstaller
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+    
+data class QuickSettings(
+    val resolutionScale: Int = 100,
+    val mouseSpeed: Int = 100,
+    val mouseTriggerMs: Int = 50,
+    val controlOpacity: Int = 100,
+    val buttonScale: Int = 100,
+    val showFps: Boolean = true,
+    val showRam: Boolean = true,
+    val showRenderer: Boolean = false
+)
 
 data class LauncherUiState(
     val isLoadingVersions: Boolean = true,
@@ -57,6 +70,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     init {
         loadVersionManifest()
         refreshDownloaded()
+        viewModelScope.launch {
+
+            RuntimeInstaller.installJava17(
+                getApplication()
+            ) {
+                log(it)
+            }
+        }
     }
 
     // ── Version Loading ─────────────────────────────────────────────────────
@@ -124,6 +145,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             detailResult.fold(
                 onSuccess = { detail ->
                     log("Starting download for ${detail.id}…")
+                    repo.saveVersionJson(detail)
+                    log("Downloading libraries...")
+                    repo.downloadLibraries(detail) {
+                        log(it)
+                    }
+                    log("Downloading assets...")
+                    repo.downloadAssets(detail) {
+                        log(it)
+                    }
                     repo.downloadClientJar(detail).collect { state ->
                         _uiState.update { it.copy(downloadState = state) }
                         when (state) {
@@ -169,16 +199,96 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _uiState.update { it.copy(launchState = LaunchState.Launching) }
             log("Launching Minecraft ${version.id} as $username…")
+            
+            val runtimes =
+                RuntimeManager.detectInstalledRuntimes(
+                    getApplication()
+                )
 
-            // On Android, Minecraft Java Edition cannot be natively executed —
-            // we delegate to PojavLauncher or a compatible JVM bridge.
-            // This sends an intent to a compatible launcher app if installed,
-            // or shows instructions.
-            log("Delegating to PojavLauncher bridge…")
+            if (runtimes.isEmpty()) {
+
+                log("No Java runtime installed")
+
+                _uiState.update {
+                    it.copy(
+                        launchState =
+                            LaunchState.Error(
+                                "No Java Runtime"
+                            )
+                    )
+                }
+
+                return@launch
+            }
+            
+            val detailResult =
+                repo.fetchVersionDetail(version)
+
+            detailResult.onSuccess { detail ->
+
+                repo.extractNatives(detail)
+
+                log("Natives extracted")
+
+                val info =
+                    repo.buildLaunchInfo(detail)
+
+                log("MainClass = ${info["mainClass"]}")
+                log("Classpath entries built")
+                log("Assets = ${info["assetsDir"]}")
+            }
+            
+            val args =
+                repo.buildLaunchArguments(
+                    detail,
+                    username
+                )
+                
+            val command =
+                JvmCommandBuilder.build(
+                    javaPath = runtime.javaBinary.absolutePath,
+                    args = args,
+                    memoryMb = _uiState.value.profile.memoryMb,
+                    nativesDir = repo.nativesDir.absolutePath
+                )
+            log("Launching JVM...")
+            
+            val launched =
+                MinecraftProcess.launch(
+                    command,
+                    repo.minecraftDir
+                )
+            
+            if(launched){
+
+                _uiState.update {
+                    it.copy(
+                        launchState =
+                            LaunchState.Running(1)
+                    )
+                }
+
+                log("Minecraft process started")
+
+            }else{
+
+                _uiState.update {
+                    it.copy(
+                        launchState =
+                            LaunchState.Error(
+                                "Failed to start JVM"
+                            )
+                    )
+                }
+
+                log("Failed to start JVM")
+            }
+            
             _uiState.update { it.copy(launchState = LaunchState.Running(0)) }
             log("Game launched!")
         }
     }
+        
 
     fun stopGame() {
         _uiState.update { it.copy(launchState = LaunchState.Exited) }

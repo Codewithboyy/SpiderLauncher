@@ -110,7 +110,13 @@ fun MainScreen(
             SpiderNavHost(
                 viewModel = viewModel
             )
-
+            
+            if (state.showLogOutput) {
+                LogViewer(
+                    logs = state.consoleLog
+                )
+            }
+            
             AnimatedVisibility(
                 visible = state.launchState.toString().contains("Running"),
                 modifier = Modifier.align(

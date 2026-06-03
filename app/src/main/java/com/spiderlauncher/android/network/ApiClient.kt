@@ -23,6 +23,8 @@ interface MojangApi {
 object ApiClient {
 
     private const val BASE_URL = "https://piston-meta.mojang.com/"
+    
+    val gson = com.google.gson.Gson()
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BASIC

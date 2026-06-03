@@ -6,6 +6,8 @@ import com.spiderlauncher.android.model.DownloadState
 import com.spiderlauncher.android.model.VersionDetail
 import com.spiderlauncher.android.model.VersionEntry
 import com.spiderlauncher.android.model.VersionManifest
+import com.spiderlauncher.android.model.AssetManifest
+import com.spiderlauncher.android.runtime.LaunchArguments
 import com.spiderlauncher.android.network.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +36,18 @@ class LauncherRepository(private val context: Context) {
 
     val assetsDir: File
         get() = File(minecraftDir, "assets").also { it.mkdirs() }
+        
+    val assetsIndexesDir: File
+        get() = File(assetsDir, "indexes").also { it.mkdirs() }
+
+    val assetsObjectsDir: File
+        get() = File(assetsDir, "objects").also { it.mkdirs() }
+    
+    val nativesDir: File
+        get() = File(
+            minecraftDir,
+            "natives"
+        ).also { it.mkdirs() }
 
     // ── Version Manifest ────────────────────────────────────────────────────
     suspend fun fetchVersionManifest(): Result<VersionManifest> = withContext(Dispatchers.IO) {
@@ -131,6 +145,243 @@ class LauncherRepository(private val context: Context) {
             emit(DownloadState.Error(e.message ?: "Unknown download error"))
         }
     }.flowOn(Dispatchers.IO)
+    
+    suspend fun downloadLibraries(detail: VersionDetail,onProgress: (String) -> Unit) {
+        val osName = "linux"
+
+            detail.libraries.forEach { library ->
+
+                if (!library.isCompatible(osName))
+                    return@forEach
+
+                val artifact =
+                    library.downloads?.artifact
+                        ?: return@forEach
+
+                val outputFile =
+                    File(librariesDir, artifact.path)
+
+                if (
+                    outputFile.exists() &&
+                    verifySha1(outputFile, artifact.sha1)
+                ) {
+                    return@forEach
+                }
+
+                outputFile.parentFile?.mkdirs()
+
+                onProgress("Library: ${library.name}")
+
+                val request =
+                    Request.Builder()
+                        .url(artifact.url)
+                        .build()
+
+                val response =
+                    httpClient.newCall(request)
+                        .execute()
+
+                if (!response.isSuccessful)
+                    return@forEach
+
+                response.body?.byteStream()?.use { input ->
+                    FileOutputStream(outputFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                if (
+                    !verifySha1(outputFile, artifact.sha1)
+                ) {
+                    outputFile.delete()
+                }
+            }
+        }
+        
+    suspend fun downloadAssets(
+    detail: VersionDetail,
+    onProgress: (String) -> Unit
+    ) {
+
+        val indexRequest =
+            Request.Builder()
+                .url(detail.assetIndex.url)
+                .build()
+
+        val indexResponse =
+            httpClient.newCall(indexRequest)
+                .execute()
+
+        if (!indexResponse.isSuccessful)
+            return
+
+        val json =
+            indexResponse.body?.string()
+                ?: return
+
+        File(
+            assetsIndexesDir,
+            "${detail.assets}.json"
+        ).writeText(json)
+
+        val manifest =
+            Gson().fromJson(
+                json,
+                AssetManifest::class.java
+            )
+
+        manifest.objects.forEach { (name, asset) ->
+
+            val hash = asset.hash
+
+            val folder = hash.substring(0, 2)
+
+            val objectFile =
+                File(
+                    assetsObjectsDir,
+                    "$folder/$hash"
+                )
+
+            if (objectFile.exists())
+                return@forEach
+
+            objectFile.parentFile?.mkdirs()
+
+            val assetUrl =
+                "https://resources.download.minecraft.net/$folder/$hash"
+
+            onProgress("Asset: $name")
+
+            val request =
+                Request.Builder()
+                    .url(assetUrl)
+                    .build()
+
+            val response =
+                httpClient.newCall(request)
+                    .execute()
+
+            if (!response.isSuccessful)
+                return@forEach
+
+            response.body?.byteStream()?.use { input ->
+                FileOutputStream(objectFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+    }
+    
+    fun buildClasspath(detail: VersionDetail): String {
+
+        val entries = mutableListOf<String>()
+
+        val clientJar =
+            File(
+                versionsDir,
+                "${detail.id}/${detail.id}.jar"
+            )
+
+        entries += clientJar.absolutePath
+
+        detail.libraries.forEach { library ->
+
+            val artifact =
+                library.downloads?.artifact
+                    ?: return@forEach
+
+            val libFile =
+                File(
+                    librariesDir,
+                    artifact.path
+                )
+
+            if (libFile.exists()) {
+                entries += libFile.absolutePath
+            }
+        }
+
+        return entries.joinToString(":")
+    }
+    
+    fun extractNatives(
+    detail: VersionDetail
+    ) {
+
+        detail.libraries.forEach { library ->
+
+            val classifiers =
+                library.downloads?.classifiers
+                    ?: return@forEach
+
+            val native =
+                classifiers["natives-linux"]
+                    ?: return@forEach
+
+            val nativeFile =
+                File(
+                    librariesDir,
+                    native.path
+                )
+
+            if (!nativeFile.exists())
+                return@forEach
+
+            java.util.zip.ZipFile(nativeFile)
+                .use { zip ->
+
+                    zip.entries().asSequence()
+                        .forEach { entry ->
+
+                            if (entry.isDirectory)
+                                return@forEach
+
+                            val output =
+                                File(
+                                    nativesDir,
+                                    entry.name
+                                )
+
+                            output.parentFile?.mkdirs()
+
+                            zip.getInputStream(entry)
+                                .use { input ->
+
+                                    output.outputStream()
+                                        .use { out ->
+                                            input.copyTo(out)
+                                        }
+                                }
+                        }
+                }
+        }
+    }
+    
+    fun buildLaunchInfo(
+        detail: VersionDetail
+    ): Map<String, String> {
+
+        return mapOf(
+            "mainClass" to detail.mainClass,
+            "classpath" to buildClasspath(detail),
+            "assetsDir" to assetsDir.absolutePath,
+            "version" to detail.id
+        )
+    }
+    
+    fun buildLaunchArguments(
+        detail: VersionDetail,
+        username: String
+    ): LaunchArguments {
+
+        return LaunchArguments(
+            mainClass = detail.mainClass,
+            classpath = buildClasspath(detail),
+            username = username,
+            version = detail.id,
+            assetsDir = assetsDir.absolutePath
+        )
+    }
 
     // ── Local Helpers ───────────────────────────────────────────────────────
     fun isVersionDownloaded(versionId: String): Boolean {

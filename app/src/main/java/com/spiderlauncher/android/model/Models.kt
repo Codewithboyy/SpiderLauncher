@@ -64,10 +64,20 @@ data class AssetIndex(
     val url: String
 )
 
+data class AssetManifest(
+    val objects: Map<String, AssetObject>
+)
+
+data class AssetObject(
+    val hash: String,
+    val size: Long
+)
+
 data class Library(
     val name: String,
     val downloads: LibraryDownloads?,
-    val rules: List<Rule>?
+    val rules: List<Rule>?,
+    val natives: Map<String, String>?
 ) {
     fun isCompatible(os: String): Boolean {
         if (rules.isNullOrEmpty()) return true
@@ -81,7 +91,8 @@ data class Library(
 }
 
 data class LibraryDownloads(
-    val artifact: LibraryArtifact?
+    val artifact: LibraryArtifact?,
+    val classifiers: Map<String, LibraryArtifact>?
 )
 
 data class LibraryArtifact(
