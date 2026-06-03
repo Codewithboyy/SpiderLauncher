@@ -26,14 +26,14 @@ data class UserPreferences(
 class PreferencesRepository(private val context: Context) {
 
     private object Keys {
-        val USERNAME             = stringKey("username")
-        val MEMORY_MB            = intKey("memory_mb")
-        val SHOW_SNAPSHOTS       = booleanKey("show_snapshots")
-        val SELECTED_VERSION     = stringKey("selected_version")
-        val LAST_PLAYED          = stringKey("last_played_version")
-        val JAVA_ARGS            = stringKey("java_args")
-        val FULLSCREEN           = booleanKey("fullscreen")
-        val AUTO_INSTALL_ASSETS  = booleanKey("auto_install_assets")
+        val USERNAME             = preferencesKey<String>("username")
+        val MEMORY_MB            = preferencesKey<Int>("memory_mb")
+        val SHOW_SNAPSHOTS       = preferencesKey<Boolean>("show_snapshots")
+        val SELECTED_VERSION     = preferencesKey<String>("selected_version")
+        val LAST_PLAYED          = preferencesKey<String>("last_played_version")
+        val JAVA_ARGS            = preferencesKey<String>("java_args")
+        val FULLSCREEN           = preferencesKey<Boolean>("fullscreen")
+        val AUTO_INSTALL_ASSETS  = preferencesKey<Boolean>("auto_install_assets")
     }
 
     val userPreferences: Flow<UserPreferences> = context.dataStore.data
