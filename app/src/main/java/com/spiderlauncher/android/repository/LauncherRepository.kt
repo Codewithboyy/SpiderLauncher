@@ -78,19 +78,10 @@ class LauncherRepository(private val context: Context) {
             }
         }
         
-    suspend fun saveVersionJson(detail:         VersionDetail
-        ) {
-
-        val versionDir =
-            File(versionsDir, detail.id)
-                .also { it.mkdirs() }
-
-        val jsonFile =
-            File(versionDir, "${detail.id}.json")
-
-        jsonFile.writeText(
-            Gson().toJson(detail)
-        )
+    suspend fun saveVersionJson(detail: VersionDetail) = withContext(Dispatchers.IO) {
+        val versionDir = File(versionsDir, detail.id).also { it.mkdirs() }
+        val jsonFile = File(versionDir, "${detail.id}.json")
+        jsonFile.writeText(Gson().toJson(detail))
     }
 
     // ── Download Client JAR ─────────────────────────────────────────────────
@@ -146,8 +137,9 @@ class LauncherRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
     
-    suspend fun downloadLibraries(detail: VersionDetail,onProgress: (String) -> Unit) {
-        val osName = "linux"
+    suspend fun downloadLibraries(detail: VersionDetail, onProgress: (String) -> Unit) = 
+        withContext(Dispatchers.IO) {
+            val osName = "linux"
 
             detail.libraries.forEach { library ->
 
@@ -199,9 +191,9 @@ class LauncherRepository(private val context: Context) {
         }
         
     suspend fun downloadAssets(
-    detail: VersionDetail,
-    onProgress: (String) -> Unit
-    ) {
+        detail: VersionDetail,
+        onProgress: (String) -> Unit
+    ) = withContext(Dispatchers.IO) {
 
         val indexRequest =
             Request.Builder()
@@ -213,11 +205,11 @@ class LauncherRepository(private val context: Context) {
                 .execute()
 
         if (!indexResponse.isSuccessful)
-            return
+            return@withContext
 
         val json =
             indexResponse.body?.string()
-                ?: return
+                ?: return@withContext
 
         File(
             assetsIndexesDir,
@@ -305,7 +297,7 @@ class LauncherRepository(private val context: Context) {
     }
     
     fun extractNatives(
-    detail: VersionDetail
+        detail: VersionDetail
     ) {
 
         detail.libraries.forEach { library ->
