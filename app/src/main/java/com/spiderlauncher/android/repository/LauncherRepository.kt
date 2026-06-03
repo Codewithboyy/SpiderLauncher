@@ -379,7 +379,8 @@ class LauncherRepository(private val context: Context) {
             classpath = buildClasspath(detail),
             username = username,
             version = detail.id,
-            assetsDir = assetsDir.absolutePath
+            assetsDir = assetsDir.absolutePath,
+            gameDir = minecraftDir.absolutePath
         )
     }
 

@@ -1,46 +1,51 @@
-# SpiderLauncher ProGuard Rules
+# ── SpiderLauncher ProGuard / R8 ─────────────────────────────────────────────
 
-# Keep application class
 -keep class com.spiderlauncher.android.SpiderApp { *; }
-
-# Keep all Activities
 -keep class com.spiderlauncher.android.ui.*Activity { *; }
-
-# Keep ViewModels
 -keep class com.spiderlauncher.android.viewmodel.** { *; }
 
-# Keep data models (used by Gson)
+# CRITICAL — keep ALL model/data classes for Gson (release build fix)
 -keep class com.spiderlauncher.android.model.** { *; }
--keepclassmembers class com.spiderlauncher.android.model.** { *; }
+-keepclassmembers class com.spiderlauncher.android.model.** { <init>(...); <fields>; }
+-keep class com.spiderlauncher.android.data.** { *; }
+-keep class com.spiderlauncher.android.runtime.** { *; }
+-keep class com.spiderlauncher.android.settings.** { *; }
+-keep class com.spiderlauncher.android.game.** { *; }
 
-# Gson
 -keepattributes Signature
 -keepattributes *Annotation*
+-keepattributes EnclosingMethod
+-keepattributes InnerClasses
+
+# Gson
 -dontwarn sun.misc.**
 -keep class com.google.gson.** { *; }
 -keep class * implements com.google.gson.TypeAdapterFactory
 -keep class * implements com.google.gson.JsonSerializer
 -keep class * implements com.google.gson.JsonDeserializer
+-keepclassmembers,allowobfuscation class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
 
 # OkHttp & Retrofit
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -dontwarn retrofit2.**
 -keep class retrofit2.** { *; }
--keep interface retrofit2.** { *; }
--keepattributes RuntimeVisibleAnnotations
--keepattributes RuntimeInvisibleAnnotations
+-keepclasseswithmembers class * { @retrofit2.http.* <methods>; }
 
 # Coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keepclassmembernames class kotlinx.** { volatile <fields>; }
 
 # Kotlin
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
--keepclassmembers class **$WhenMappings {
-    <fields>;
-}
+-keepclassmembers class **$WhenMappings { <fields>; }
+
+# DataStore
+-keep class androidx.datastore.** { *; }
 
 # WorkManager
 -keep class * extends androidx.work.Worker
@@ -48,15 +53,14 @@
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
 
-# Keep enum classes
+# Enums
 -keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
 
-# Remove logging in release builds
+# Strip debug logs in release
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);
-    public static *** i(...);
 }

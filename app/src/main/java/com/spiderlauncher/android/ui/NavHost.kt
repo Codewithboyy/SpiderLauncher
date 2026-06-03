@@ -14,11 +14,15 @@ import androidx.navigation.compose.*
 import com.spiderlauncher.android.ui.screens.*
 import com.spiderlauncher.android.viewmodel.LauncherViewModel
 
-sealed class Screen(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+sealed class Screen(
+    val route: String,
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
     object Home     : Screen("home",     "Home",     Icons.Filled.Home)
-    object Versions : Screen("versions", "Versions", Icons.Filled.List)
-    object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
+    object Versions : Screen("versions", "Versions", Icons.Filled.FormatListBulleted)
     object Console  : Screen("console",  "Console",  Icons.Filled.Terminal)
+    object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
 }
 
 private val bottomNavItems = listOf(Screen.Home, Screen.Versions, Screen.Console, Screen.Settings)
@@ -28,41 +32,45 @@ private val bottomNavItems = listOf(Screen.Home, Screen.Versions, Screen.Console
 fun SpiderNavHost(viewModel: LauncherViewModel) {
     val navController = rememberNavController()
 
+    fun navigateTo(route: String) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState    = true
+        }
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
-
+                val navBackStack   by navController.currentBackStackEntryAsState()
+                val currentDest    = navBackStack?.destination
                 bottomNavItems.forEach { screen ->
                     NavigationBarItem(
-                        icon  = { Icon(screen.icon, contentDescription = screen.label) },
-                        label = { Text(screen.label) },
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                        onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState    = true
-                            }
-                        }
+                        icon     = { Icon(screen.icon, screen.label) },
+                        label    = { Text(screen.label) },
+                        selected = currentDest?.hierarchy?.any { it.route == screen.route } == true,
+                        onClick  = { navigateTo(screen.route) }
                     )
                 }
             }
         }
-    ) { innerPadding ->
+    ) { padding ->
         NavHost(
             navController    = navController,
             startDestination = Screen.Home.route,
-            modifier         = Modifier.padding(innerPadding),
-            enterTransition  = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start,  tween(200)) },
-            exitTransition   = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(200)) },
-            popEnterTransition  = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(200)) },
-            popExitTransition   = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End,tween(200)) }
+            modifier         = Modifier.padding(padding),
+            enterTransition  = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(180)) },
+            exitTransition   = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(180)) },
+            popEnterTransition  = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(180)) },
+            popExitTransition   = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(180)) }
         ) {
-            composable(Screen.Home.route)     { HomeScreen(viewModel) }
+            composable(Screen.Home.route) {
+                // Pass settings navigation callback so the ⚙ icon on HomeScreen works
+                HomeScreen(viewModel = viewModel, onOpenSettings = { navigateTo(Screen.Settings.route) })
+            }
             composable(Screen.Versions.route) { VersionsScreen(viewModel) }
-            composable(Screen.Console.route)  { ConsoleScreen(viewModel) }
+            composable(Screen.Console.route)  { ConsoleScreen(viewModel)  }
             composable(Screen.Settings.route) { SettingsScreen(viewModel) }
         }
     }

@@ -6,30 +6,34 @@ object JvmCommandBuilder {
         javaPath: String,
         args: LaunchArguments,
         memoryMb: Int,
-        nativesDir: String
+        nativesDir: String,
+        extraArgs: String = ""
     ): List<String> {
-
-        return listOf(
+        val cmd = mutableListOf(
             javaPath,
-
-            "-Xms512M",
+            "-Xms${minOf(256, memoryMb)}M",
             "-Xmx${memoryMb}M",
-
             "-Djava.library.path=$nativesDir",
-
-            "-cp",
-            args.classpath,
-
-            args.mainClass,
-
-            "--username",
-            args.username,
-
-            "--version",
-            args.version,
-
-            "--assetsDir",
-            args.assetsDir
+            "-Dfml.ignoreInvalidMinecraftCertificates=true",
+            "-Dfml.ignorePatchDiscrepancies=true"
         )
+
+        // Extra JVM args from settings (e.g. -XX:+UseG1GC)
+        if (extraArgs.isNotBlank()) {
+            extraArgs.trim().split("\\s+".toRegex()).forEach { cmd += it }
+        }
+
+        cmd += listOf(
+            "-cp", args.classpath,
+            args.mainClass,
+            "--username", args.username,
+            "--version", args.version,
+            "--assetsDir", args.assetsDir,
+            "--accessToken", "0",
+            "--userType", "offline",
+            "--gameDir", args.gameDir
+        )
+
+        return cmd
     }
 }
