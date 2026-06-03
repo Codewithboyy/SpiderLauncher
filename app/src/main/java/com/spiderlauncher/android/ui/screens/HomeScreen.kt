@@ -77,12 +77,12 @@ fun HomeScreen(
                         Icons.Filled.Terminal, "Toggle console",
                         tint = if (state.showConsoleOverlay)
                                    MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurfaceVariant
+                                else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            // ── Logo ──────────────────────────────────────────────────────────
+            // ── Logo ────────────────────────────────────────────────────────…
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -169,7 +169,7 @@ fun HomeScreen(
                                 Text(dl.label, style = MaterialTheme.typography.bodySmall)
                             }
                             LinearProgressIndicator(
-                                progress = { dl.progress / 100f },
+                                progress = dl.progress / 100f,
                                 modifier = Modifier.fillMaxWidth(),
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )

@@ -66,7 +66,7 @@ fun SettingsScreen(viewModel: LauncherViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-            // ── Player ────────────────────────────────────────────────────────
+            // ── Player ───────────────────────────────────────────────────────…
             SettingsSection("Player", Icons.Filled.Person) {
                 OutlinedTextField(
                     value         = state.profile.username,
@@ -182,7 +182,7 @@ fun SettingsScreen(viewModel: LauncherViewModel) {
                 }
             }
 
-            // ── Game ──────────────────────────────────────────────────────────
+            // ── Game ────────────────────────────────────────────────────────[…]
             SettingsSection("Game", Icons.Filled.Gamepad) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -217,7 +217,7 @@ fun SettingsScreen(viewModel: LauncherViewModel) {
                 }
             }
 
-            // ── About ─────────────────────────────────────────────────────────
+            // ── About ───────────────────────────────────────────────────────…
             SettingsSection("About", Icons.Filled.Info) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AboutRow("App",      "SpiderLauncher")
