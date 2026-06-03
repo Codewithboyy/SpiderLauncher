@@ -9,6 +9,9 @@ import com.spiderlauncher.android.model.Profile
 import com.spiderlauncher.android.model.VersionEntry
 import com.spiderlauncher.android.repository.LauncherRepository
 import com.spiderlauncher.android.runtime.RuntimeInstaller
+import com.spiderlauncher.android.runtime.RuntimeManager
+import com.spiderlauncher.android.runtime.JvmCommandBuilder
+import com.spiderlauncher.android.runtime.MinecraftProcess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -238,51 +241,67 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 log("Assets = ${info["assetsDir"]}")
             }
             
-            val args =
-                repo.buildLaunchArguments(
-                    detail,
-                    username
-                )
-                
-            val command =
-                JvmCommandBuilder.build(
-                    javaPath = runtime.javaBinary.absolutePath,
-                    args = args,
-                    memoryMb = _uiState.value.profile.memoryMb,
-                    nativesDir = repo.nativesDir.absolutePath
-                )
-            log("Launching JVM...")
-            
-            val launched =
-                MinecraftProcess.launch(
-                    command,
-                    repo.minecraftDir
-                )
-            
-            if(launched){
+            val runtime = runtimes.first()
 
-                _uiState.update {
-                    it.copy(
-                        launchState =
-                            LaunchState.Running(1)
-                    )
-                }
+                detailResult.onSuccess { detail ->
 
-                log("Minecraft process started")
+                    repo.extractNatives(detail)
 
-            }else{
+                    log("Natives extracted")
 
-                _uiState.update {
-                    it.copy(
-                        launchState =
-                            LaunchState.Error(
-                                "Failed to start JVM"
+                    val info =
+                        repo.buildLaunchInfo(detail)
+
+                    log("MainClass = ${info["mainClass"]}")
+                    log("Classpath entries built")
+                    log("Assets = ${info["assetsDir"]}")
+
+                    val args =
+                        repo.buildLaunchArguments(
+                            detail,
+                            username
+                        )
+
+                    val command =
+                        JvmCommandBuilder.build(
+                            javaPath = runtime.javaBinary.absolutePath,
+                            args = args,
+                            memoryMb = _uiState.value.profile.memoryMb,
+                            nativesDir = repo.nativesDir.absolutePath
+                        )
+
+                        log("Launching JVM...")
+
+                    val launched =
+                        MinecraftProcess.launch(
+                            command,
+                            repo.minecraftDir
+                        )
+
+                    if (launched) {
+
+                        _uiState.update {
+                            it.copy(
+                                launchState =
+                                    LaunchState.Running(1)
                             )
-                    )
-                }
+                        }
 
-                log("Failed to start JVM")
-            }
+                        log("Minecraft process started")
+
+                    } else {
+
+                        _uiState.update {
+                            it.copy(
+                                launchState =
+                                    LaunchState.Error(
+                                        "Launch failed"
+                                    )
+                            )
+                        }
+                        
+                        log("Launch failed")
+                    }
             
             _uiState.update { it.copy(launchState = LaunchState.Running(0)) }
             log("Game launched!")
