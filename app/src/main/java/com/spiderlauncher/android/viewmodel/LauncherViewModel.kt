@@ -226,20 +226,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             
             val detailResult =
                 repo.fetchVersionDetail(version)
-
-            detailResult.onSuccess { detail ->
-
-                repo.extractNatives(detail)
-
-                log("Natives extracted")
-
-                val info =
-                    repo.buildLaunchInfo(detail)
-
-                log("MainClass = ${info["mainClass"]}")
-                log("Classpath entries built")
-                log("Assets = ${info["assetsDir"]}")
-            }
             
             val runtime = runtimes.first()
 
@@ -302,9 +288,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                         
                         log("Launch failed")
                     }
-            
-            _uiState.update { it.copy(launchState = LaunchState.Running(0)) }
-            log("Game launched!")
+                }
         }
     }
         
