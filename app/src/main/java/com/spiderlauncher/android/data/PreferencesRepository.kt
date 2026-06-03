@@ -2,7 +2,11 @@ package com.spiderlauncher.android.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -26,14 +30,14 @@ data class UserPreferences(
 class PreferencesRepository(private val context: Context) {
 
     private object Keys {
-        val USERNAME             = preferencesKey<String>("username")
-        val MEMORY_MB            = preferencesKey<Int>("memory_mb")
-        val SHOW_SNAPSHOTS       = preferencesKey<Boolean>("show_snapshots")
-        val SELECTED_VERSION     = preferencesKey<String>("selected_version")
-        val LAST_PLAYED          = preferencesKey<String>("last_played_version")
-        val JAVA_ARGS            = preferencesKey<String>("java_args")
-        val FULLSCREEN           = preferencesKey<Boolean>("fullscreen")
-        val AUTO_INSTALL_ASSETS  = preferencesKey<Boolean>("auto_install_assets")
+        val USERNAME             = stringPreferencesKey("username")
+        val MEMORY_MB            = intPreferencesKey("memory_mb")
+        val SHOW_SNAPSHOTS       = booleanPreferencesKey("show_snapshots")
+        val SELECTED_VERSION     = stringPreferencesKey("selected_version")
+        val LAST_PLAYED          = stringPreferencesKey("last_played_version")
+        val JAVA_ARGS            = stringPreferencesKey("java_args")
+        val FULLSCREEN           = booleanPreferencesKey("fullscreen")
+        val AUTO_INSTALL_ASSETS  = booleanPreferencesKey("auto_install_assets")
     }
 
     val userPreferences: Flow<UserPreferences> = context.dataStore.data
