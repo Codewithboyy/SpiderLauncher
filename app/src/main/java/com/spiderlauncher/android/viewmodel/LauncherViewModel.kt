@@ -13,6 +13,8 @@ import com.spiderlauncher.android.runtime.RuntimeInstaller
 import com.spiderlauncher.android.runtime.RuntimeManager
 import com.spiderlauncher.android.runtime.JvmCommandBuilder
 import com.spiderlauncher.android.runtime.MinecraftProcess
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -57,6 +59,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private val _uiState = MutableStateFlow(LauncherUiState())
     val uiState: StateFlow<LauncherUiState> = _uiState.asStateFlow()
+
+    // Keep a small in-memory cap for console lines to avoid unbounded growth
+    private val MAX_CONSOLE_LINES = 500
 
     init {
         viewModelScope.launch {
@@ -157,7 +162,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { prefs.saveAutoInstallAssets(value) }
     }
 
-    // ── Download ──────────────────────────────────────────────────────────────
+    // ── Download ────────────────────────────────────────────────────────────
 
     fun downloadSelectedVersion() {
         val version = _uiState.value.selectedVersion ?: return
@@ -175,16 +180,50 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     repo.saveVersionJson(detail)
 
                     if (_uiState.value.autoInstallAssets) {
-                        log("Downloading libraries…")
-                        repo.downloadLibraries(detail) { log(it) }
-                        log("Downloading assets…")
-                        repo.downloadAssets(detail) { log(it) }
+                        log("Downloading libraries & assets in parallel…")
+                        // Run libraries and assets download in parallel to avoid blocking the UI
+                        try {
+                            coroutineScope {
+                                val libs = async { repo.downloadLibraries(detail) { log(it) } }
+                                val assets = async { repo.downloadAssets(detail) { log(it) } }
+                                // await both, propagate errors if any
+                                libs.await()
+                                assets.await()
+                            }
+                            log("Libraries & assets download finished")
+                        } catch (e: Exception) {
+                            log("✗ Error during libs/assets download: ${e.message}")
+                        }
                     }
 
+                    // Throttle progress updates to avoid excessive UI recompositions
+                    var lastProgress = -1
+                    var lastUpdateMs = 0L
+
                     repo.downloadClientJar(detail).collect { state ->
-                        _uiState.update { it.copy(downloadState = state) }
+                        val now = System.currentTimeMillis()
+
+                        if (state is DownloadState.Downloading) {
+                            val p = state.progress
+                            val shouldUpdate = when {
+                                p != lastProgress && (p - lastProgress >= 1) -> true
+                                now - lastUpdateMs >= 250 -> true
+                                else -> false
+                            }
+
+                            if (shouldUpdate) {
+                                lastProgress = p
+                                lastUpdateMs = now
+                                _uiState.update { it.copy(downloadState = state) }
+                            }
+
+                        } else {
+                            // Always propagate terminal states (Done/Error)
+                            _uiState.update { it.copy(downloadState = state) }
+                        }
+
                         when (state) {
-                            is DownloadState.Downloading -> { /* progress shown in UI */ }
+                            is DownloadState.Downloading -> { /* progress shown in UI (throttled) */ }
                             is DownloadState.Done  -> {
                                 log("✓ Download complete for ${detail.id}")
                                 refreshDownloaded()
@@ -213,7 +252,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // ── Launch ────────────────────────────────────────────────────────────────
+    // ── Launch ──────────────────────────────────────────────────────────────
 
     fun launchGame() {
         val version  = _uiState.value.selectedVersion ?: run {
@@ -335,7 +374,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun sendKeycode(code: Int) { log("Keycode sent: $code") }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Helpers ─────────────────────────────────────────────────────────────
 
     private fun refreshDownloaded() {
         _uiState.update { it.copy(downloadedVersions = repo.getDownloadedVersions().toSet()) }
@@ -347,6 +386,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun log(message: String) {
         val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
             .format(java.util.Date())
-        _uiState.update { it.copy(consoleLog = it.consoleLog + "[$ts] $message") }
+        _uiState.update {
+            val newLog = it.consoleLog + "[$ts] $message"
+            val trimmed = if (newLog.size > MAX_CONSOLE_LINES) newLog.takeLast(MAX_CONSOLE_LINES) else newLog
+            it.copy(consoleLog = trimmed)
+        }
     }
 }
