@@ -39,7 +39,7 @@ jobs:
       - name: Get current version
         id: current
         run: |
-          VERSION=$(grep 'versionName' android/app/build.gradle | grep -oP '"\K[^"]+')
+          VERSION=$(grep 'versionName' app/build.gradle | grep -oP '"\K[^"]+')
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Current version: $VERSION"
 
@@ -59,17 +59,17 @@ jobs:
       - name: Update version in build.gradle
         run: |
           NEW="${{ steps.newver.outputs.NEW_VERSION }}"
-          sed -i "s/versionName \".*\"/versionName \"${NEW}\"/" android/app/build.gradle
+          sed -i "s/versionName \".*\"/versionName \"${NEW}\"/" app/build.gradle
           # Increment versionCode
-          OLD_CODE=$(grep 'versionCode' android/app/build.gradle | grep -oP '\d+')
+          OLD_CODE=$(grep 'versionCode' app/build.gradle | grep -oP '\d+')
           NEW_CODE=$((OLD_CODE+1))
-          sed -i "s/versionCode ${OLD_CODE}/versionCode ${NEW_CODE}/" android/app/build.gradle
+          sed -i "s/versionCode ${OLD_CODE}/versionCode ${NEW_CODE}/" app/build.gradle
           echo "Updated versionName to $NEW, versionCode to $NEW_CODE"
 
       - name: Commit and tag
         run: |
           NEW="v${{ steps.newver.outputs.NEW_VERSION }}"
-          git add android/app/build.gradle
+          git add app/build.gradle
           git commit -m "chore: bump version to $NEW"
           git tag -a "$NEW" -m "Release $NEW${{ github.event.inputs.release_notes && format(': {0}', github.event.inputs.release_notes) || '' }}"
           git push origin HEAD

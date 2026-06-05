@@ -8,25 +8,58 @@ object MinecraftProcess {
 
     private var process: Process? = null
 
-    fun launch(command: List<String>, workingDir: File): Boolean {
+    data class LaunchResult(
+        val started: Boolean,
+        val error: String? = null,
+        val command: List<String> = emptyList(),
+        val workingDir: String = ""
+    )
+
+    fun launch(command: List<String>, workingDir: File): LaunchResult {
         return try {
             process = ProcessBuilder(command)
                 .directory(workingDir)
                 .redirectErrorStream(true)
                 .start()
-            true
+            LaunchResult(
+                started = true,
+                command = command,
+                workingDir = workingDir.absolutePath
+            )
         } catch (e: Exception) {
-            false
+            LaunchResult(
+                started = false,
+                error = buildString {
+                    append(e::class.java.simpleName)
+                    e.message?.let { message -> append(": ").append(message) }
+                    e.cause?.let { cause ->
+                        append("; caused by ")
+                        append(cause::class.java.simpleName)
+                        cause.message?.let { causeMessage -> append(": ").append(causeMessage) }
+                    }
+                },
+                command = command,
+                workingDir = workingDir.absolutePath
+            )
         }
     }
 
-    /** Stream stdout lines to the provided callback (suspending, runs on IO). */
-    suspend fun streamOutput(onLine: (String) -> Unit) = withContext(Dispatchers.IO) {
+    /** Stream stdout/stderr lines to the provided callback (suspending, runs on IO). */
+    suspend fun streamOutput(onLine: (String) -> Unit): Int? = withContext(Dispatchers.IO) {
+        val runningProcess = process ?: return@withContext null
+
         try {
-            process?.inputStream?.bufferedReader()?.forEachLine { line ->
-                onLine(line)
+            runningProcess.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line -> onLine(line) }
             }
-        } catch (_: Exception) {}
+            runningProcess.waitFor()
+        } catch (e: Exception) {
+            onLine(
+                "✗ Console stream error: ${e::class.java.simpleName}" +
+                    (e.message?.let { ": $it" } ?: "")
+            )
+            null
+        }
     }
 
     fun stop() {

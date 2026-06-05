@@ -108,7 +108,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, unit-test]
 
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    # Build signed release artifacts for release tags, protected release branches,
+    # develop branch CI, and manual runs. Keep pull requests excluded because
+    # repository secrets are not always available to PR workflows.
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/tags/v') ||
+       github.ref == 'refs/heads/main' ||
+       github.ref == 'refs/heads/master' ||
+       github.ref == 'refs/heads/develop')
 
     steps:
       - name: Checkout

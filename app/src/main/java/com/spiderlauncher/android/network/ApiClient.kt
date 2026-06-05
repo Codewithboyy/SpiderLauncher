@@ -2,6 +2,7 @@ package com.spiderlauncher.android.network
 
 import com.spiderlauncher.android.model.VersionDetail
 import com.spiderlauncher.android.model.VersionManifest
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
@@ -30,7 +31,13 @@ object ApiClient {
         level = HttpLoggingInterceptor.Level.BASIC
     }
 
+    private val downloadDispatcher = Dispatcher().apply {
+        maxRequests = 32
+        maxRequestsPerHost = 8
+    }
+
     private val okHttpClient = OkHttpClient.Builder()
+        .dispatcher(downloadDispatcher)
         .addInterceptor(loggingInterceptor)
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)

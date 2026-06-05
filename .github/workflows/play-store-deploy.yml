@@ -30,31 +30,32 @@ jobs:
           distribution: temurin
           cache: gradle
 
-      - name: Grant execute permission
-        run: chmod +x android/gradlew
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.8
 
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
-          echo "KEYSTORE_FILE=$(pwd)/android/app/release.keystore" >> $GITHUB_ENV
+          echo "$KEYSTORE_BASE64" | base64 --decode > app/release.keystore
+          echo "KEYSTORE_FILE=$(pwd)/app/release.keystore" >> $GITHUB_ENV
 
       - name: Build release AAB
-        working-directory: android
         env:
           KEYSTORE_FILE:     ${{ env.KEYSTORE_FILE }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew bundleRelease --stacktrace
+        run: gradle bundleRelease --stacktrace
 
       - name: Upload to Google Play
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.spiderlauncher.android
-          releaseFiles: android/app/build/outputs/bundle/release/*.aab
+          releaseFiles: app/build/outputs/bundle/release/*.aab
           track: ${{ github.event.inputs.track }}
           status: completed
           inAppUpdatePriority: 2

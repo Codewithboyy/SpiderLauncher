@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.concurrent.CancellationException
 
 data class LauncherUiState(
     val isLoadingVersions: Boolean           = true,
@@ -61,7 +62,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val uiState: StateFlow<LauncherUiState> = _uiState.asStateFlow()
 
     // Keep a small in-memory cap for console lines to avoid unbounded growth
-    private val MAX_CONSOLE_LINES = 500
+    private val MAX_CONSOLE_LINES = 2_000
 
     init {
         viewModelScope.launch {
@@ -192,7 +193,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                             }
                             log("Libraries & assets download finished")
                         } catch (e: Exception) {
-                            log("✗ Error during libs/assets download: ${e.message}")
+                            logThrowable("Error during libs/assets download", e)
                         }
                     }
 
@@ -266,68 +267,90 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(launchState = LaunchState.Launching, showConsoleOverlay = true) }
+            try {
+                _uiState.update { it.copy(launchState = LaunchState.Launching, showConsoleOverlay = true) }
 
-            log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            log("  SpiderLauncher  •  MC ${version.id}")
-            log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            log("User    : $username")
-            log("Memory  : ${_uiState.value.profile.memoryMb} MB")
+                log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                log("  SpiderLauncher  •  MC ${version.id}")
+                log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                log("User    : $username")
+                log("Memory  : ${_uiState.value.profile.memoryMb} MB")
 
-            val runtimes = RuntimeManager.detectInstalledRuntimes(getApplication())
-            if (runtimes.isEmpty()) {
-                log("✗ No Java runtime found — installing…")
-                val installed = RuntimeInstaller.installJava17(getApplication()) { log(it) }
-                if (!installed) {
-                    _uiState.update { it.copy(launchState = LaunchState.Error("Java 17 install failed")) }
+                val runtimes = RuntimeManager.detectInstalledRuntimes(getApplication())
+                if (runtimes.isEmpty()) {
+                    log("✗ No Java runtime found — installing…")
+                    val installed = RuntimeInstaller.installJava17(getApplication()) { log(it) }
+                    if (!installed) {
+                        _uiState.update { it.copy(launchState = LaunchState.Error("Java 17 install failed")) }
+                        log("✗ Java 17 install failed")
+                        return@launch
+                    }
+                }
+
+                val runtime = RuntimeManager.detectInstalledRuntimes(getApplication())
+                    .firstOrNull() ?: run {
+                    _uiState.update { it.copy(launchState = LaunchState.Error("No Java runtime available")) }
+                    log("✗ No runtime available after install")
                     return@launch
                 }
-            }
 
-            val runtime = RuntimeManager.detectInstalledRuntimes(getApplication())
-                .firstOrNull() ?: run {
-                _uiState.update { it.copy(launchState = LaunchState.Error("No Java runtime available")) }
-                log("✗ No runtime available after install")
-                return@launch
-            }
+                log("Runtime : ${runtime.name} (Java ${runtime.version})")
 
-            log("Runtime : ${runtime.name} (Java ${runtime.version})")
+                val detailResult = repo.fetchVersionDetail(version)
+                detailResult.onSuccess { detail ->
+                    repo.extractNatives(detail)
+                    log("Natives extracted")
 
-            val detailResult = repo.fetchVersionDetail(version)
-            detailResult.onSuccess { detail ->
-                repo.extractNatives(detail)
-                log("Natives extracted")
+                    val info = repo.buildLaunchInfo(detail)
+                    log("MainClass: ${info["mainClass"]}")
 
-                val info = repo.buildLaunchInfo(detail)
-                log("MainClass: ${info["mainClass"]}")
+                    val args    = repo.buildLaunchArguments(detail, username)
+                    val command = JvmCommandBuilder.build(
+                        javaPath   = runtime.javaBinary.absolutePath,
+                        args       = args,
+                        memoryMb   = _uiState.value.profile.memoryMb,
+                        nativesDir = repo.nativesDir.absolutePath,
+                        extraArgs  = _uiState.value.javaArgs
+                    )
 
-                val args    = repo.buildLaunchArguments(detail, username)
-                val command = JvmCommandBuilder.build(
-                    javaPath   = runtime.javaBinary.absolutePath,
-                    args       = args,
-                    memoryMb   = _uiState.value.profile.memoryMb,
-                    nativesDir = repo.nativesDir.absolutePath,
-                    extraArgs  = _uiState.value.javaArgs
-                )
+                    log("Launching JVM…")
+                    log("WorkDir : ${repo.minecraftDir.absolutePath}")
+                    log("Java    : ${runtime.javaBinary.absolutePath}")
+                    val launchResult = MinecraftProcess.launch(command, repo.minecraftDir)
 
-                log("Launching JVM…")
-                val launched = MinecraftProcess.launch(command, repo.minecraftDir)
+                    if (launchResult.started) {
+                        _uiState.update { it.copy(launchState = LaunchState.Running(1)) }
+                        log("✓ Minecraft process started")
+                        prefs.saveLastPlayed(version.id)
 
-                if (launched) {
-                    _uiState.update { it.copy(launchState = LaunchState.Running(1)) }
-                    log("✓ Minecraft process started")
-                    prefs.saveLastPlayed(version.id)
-
-                    // Stream stdout/stderr lines to the console log
-                    MinecraftProcess.streamOutput { line -> log(line) }
-                } else {
-                    _uiState.update { it.copy(launchState = LaunchState.Error("Process failed to start")) }
-                    log("✗ Launch failed")
+                        // Stream stdout/stderr lines to the console log, then report the real exit code.
+                        val exitCode = MinecraftProcess.streamOutput { line -> log(line) }
+                        if (exitCode == 0) {
+                            _uiState.update { it.copy(launchState = LaunchState.Exited) }
+                            log("✓ Minecraft exited normally (code 0)")
+                        } else if (exitCode != null) {
+                            _uiState.update {
+                                it.copy(launchState = LaunchState.Error("Minecraft exited with code $exitCode"))
+                            }
+                            log("✗ Minecraft exited with code $exitCode")
+                        }
+                    } else {
+                        val error = launchResult.error ?: "Unknown process start error"
+                        _uiState.update { it.copy(launchState = LaunchState.Error(error)) }
+                        log("✗ Launch failed: $error")
+                        log("WorkDir : ${launchResult.workingDir}")
+                        log("Command : ${launchResult.command.joinToString(" ")}")
+                    }
                 }
-            }
-            detailResult.onFailure { err ->
-                _uiState.update { it.copy(launchState = LaunchState.Error(err.message ?: "Detail fetch failed")) }
-                log("✗ ${err.message}")
+                detailResult.onFailure { err ->
+                    _uiState.update { it.copy(launchState = LaunchState.Error(err.message ?: "Detail fetch failed")) }
+                    logThrowable("Failed to fetch version detail", err)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { it.copy(launchState = LaunchState.Error(e.message ?: e::class.java.simpleName)) }
+                logThrowable("Unexpected launch error", e)
             }
         }
     }
@@ -382,6 +405,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun clearError() = _uiState.update { it.copy(errorMessage = null) }
     fun clearDownloadState() = _uiState.update { it.copy(downloadState = DownloadState.Idle) }
+
+    private fun logThrowable(prefix: String, error: Throwable) {
+        val summary = error.message ?: error::class.java.simpleName
+        log("✗ $prefix: $summary")
+        error.stackTraceToString()
+            .lineSequence()
+            .take(12)
+            .forEach { line -> log(line) }
+    }
 
     fun log(message: String) {
         val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
