@@ -22,8 +22,19 @@ object RuntimeManager {
             .listFiles()
             ?.forEach { runtime ->
 
-                val javaFile =
-                    File(runtime, "bin/java")
+                android.util.Log.d(
+                    "SpiderLauncher",
+                    "Runtime folder: ${runtime.absolutePath}"
+                )
+
+                runtime.walkTopDown().forEach {
+                    android.util.Log.d(
+                        "SpiderLauncher",
+                        "File: ${it.absolutePath}"
+                    )
+                }
+
+                val javaFile = File(runtime, "bin/java")
 
                 if (javaFile.exists()) {
 
@@ -44,3 +55,4 @@ object RuntimeManager {
         return result
     }
 }
+    
