@@ -7,7 +7,7 @@ object RuntimeManager {
 
     fun getRuntimeDir(context: Context): File {
         return File(
-            context.getExternalFilesDir(null),
+            context.filesDir,
             "runtimes"
         ).also { it.mkdirs() }
     }

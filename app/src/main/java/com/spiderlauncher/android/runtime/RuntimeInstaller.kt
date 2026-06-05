@@ -14,9 +14,9 @@ object RuntimeInstaller {
     private val client = OkHttpClient()
 
     private const val JAVA17_URL =
-        "https://github.com/MojoLauncher/android-openjdk-build-multiarch/releases/download/rolling/jre17-pojav.zip"
+        "https://github.com/MojoLauncher/android-openjdk-build-17-25/releases/download/rolling/jre17-pojav.zip"
     private const val JAVA21_URL = 
-        "https://github.com/MojoLauncher/android-openjdk-build-multiarch/releases/download/rolling/jre21-pojav.zip"
+        "https://github.com/MojoLauncher/android-openjdk-build-17-25/releases/download/rolling/jre21-pojav.zip"
 
     suspend fun installJava17(
         context: Context,
