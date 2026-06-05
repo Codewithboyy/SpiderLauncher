@@ -10,6 +10,9 @@ import com.spiderlauncher.android.model.AssetManifest
 import com.spiderlauncher.android.runtime.LaunchArguments
 import com.spiderlauncher.android.network.ApiClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -17,9 +20,18 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 
 class LauncherRepository(private val context: Context) {
+
+    private companion object {
+        const val ASSET_PARALLEL_DOWNLOADS = 8
+        const val LIBRARY_PARALLEL_DOWNLOADS = 4
+        const val DOWNLOAD_PROGRESS_LOG_INTERVAL = 25
+        const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
+    }
 
     private val api = ApiClient.mojangApi
     private val httpClient = ApiClient.buildDownloadClient()
@@ -100,27 +112,33 @@ class LauncherRepository(private val context: Context) {
             val request  = Request.Builder().url(detail.downloads.client.url).build()
             val response = httpClient.newCall(request).execute()
 
-            if (!response.isSuccessful) {
-                emit(DownloadState.Error("HTTP ${response.code}"))
-                return@flow
-            }
+            response.use { res ->
+                if (!res.isSuccessful) {
+                    emit(DownloadState.Error("HTTP ${res.code}"))
+                    return@flow
+                }
 
-            val body        = response.body ?: run {
-                emit(DownloadState.Error("Empty response body"))
-                return@flow
-            }
-            val totalBytes  = detail.downloads.client.size
-            var downloaded  = 0L
-            val buffer      = ByteArray(8192)
+                val body = res.body ?: run {
+                    emit(DownloadState.Error("Empty response body"))
+                    return@flow
+                }
+                val totalBytes = detail.downloads.client.size
+                var downloaded = 0L
+                val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
 
-            FileOutputStream(jarFile).use { out ->
-                body.byteStream().use { input ->
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        out.write(buffer, 0, read)
-                        downloaded += read
-                        val progress = if (totalBytes > 0) (downloaded * 100 / totalBytes).toInt() else 0
-                        emit(DownloadState.Downloading(progress, "Downloading client… $progress%"))
+                FileOutputStream(jarFile).use { out ->
+                    body.byteStream().use { input ->
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            out.write(buffer, 0, read)
+                            downloaded += read
+                            val progress = if (totalBytes > 0) {
+                                (downloaded * 100 / totalBytes).toInt()
+                            } else {
+                                0
+                            }
+                            emit(DownloadState.Downloading(progress, "Downloading client… $progress%"))
+                        }
                     }
                 }
             }
@@ -137,59 +155,45 @@ class LauncherRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
     
-    suspend fun downloadLibraries(detail: VersionDetail, onProgress: (String) -> Unit) = 
+    suspend fun downloadLibraries(detail: VersionDetail, onProgress: (String) -> Unit) =
         withContext(Dispatchers.IO) {
             val osName = "linux"
-
-            detail.libraries.forEach { library ->
-
-                if (!library.isCompatible(osName))
-                    return@forEach
-
-                val artifact =
-                    library.downloads?.artifact
-                        ?: return@forEach
-
-                val outputFile =
-                    File(librariesDir, artifact.path)
-
-                if (
-                    outputFile.exists() &&
-                    verifySha1(outputFile, artifact.sha1)
-                ) {
-                    return@forEach
+            val pendingLibraries = detail.libraries.mapNotNull { library ->
+                if (!library.isCompatible(osName)) {
+                    return@mapNotNull null
                 }
 
-                outputFile.parentFile?.mkdirs()
+                val artifact = library.downloads?.artifact ?: return@mapNotNull null
+                val outputFile = File(librariesDir, artifact.path)
 
-                onProgress("Library: ${library.name}")
-
-                val request =
-                    Request.Builder()
-                        .url(artifact.url)
-                        .build()
-
-                val response =
-                    httpClient.newCall(request)
-                        .execute()
-
-                if (!response.isSuccessful)
-                    return@forEach
-
-                response.body?.byteStream()?.use { input ->
-                    FileOutputStream(outputFile).use { output ->
-                        input.copyTo(output)
-                    }
+                if (outputFile.exists() && verifySha1(outputFile, artifact.sha1)) {
+                    return@mapNotNull null
                 }
 
-                if (
-                    !verifySha1(outputFile, artifact.sha1)
-                ) {
-                    outputFile.delete()
-                }
+                LibraryDownload(library.name, artifact.url, artifact.sha1, outputFile)
+            }
+
+            if (pendingLibraries.isEmpty()) {
+                onProgress("Libraries already installed")
+                return@withContext
+            }
+
+            onProgress("Downloading ${pendingLibraries.size} libraries…")
+            downloadInBatches(
+                items = pendingLibraries,
+                batchSize = LIBRARY_PARALLEL_DOWNLOADS,
+                onProgress = onProgress,
+                progressLabel = "libraries"
+            ) { item ->
+                downloadFile(
+                    url = item.url,
+                    outputFile = item.outputFile,
+                    expectedSha1 = item.sha1,
+                    label = "library ${item.name}"
+                )
             }
         }
-        
+
     suspend fun downloadAssets(
         detail: VersionDetail,
         onProgress: (String) -> Unit
@@ -200,16 +204,16 @@ class LauncherRepository(private val context: Context) {
                 .url(detail.assetIndex.url)
                 .build()
 
-        val indexResponse =
-            httpClient.newCall(indexRequest)
-                .execute()
+        val json = httpClient.newCall(indexRequest)
+            .execute()
+            .use { indexResponse ->
+                if (!indexResponse.isSuccessful) {
+                    throw IOException("Asset index download failed: HTTP ${indexResponse.code}")
+                }
 
-        if (!indexResponse.isSuccessful)
-            return@withContext
-
-        val json =
-            indexResponse.body?.string()
-                ?: return@withContext
+                indexResponse.body?.string()
+                    ?: throw IOException("Asset index download failed: empty response body")
+            }
 
         File(
             assetsIndexesDir,
@@ -222,45 +226,41 @@ class LauncherRepository(private val context: Context) {
                 AssetManifest::class.java
             )
 
-        manifest.objects.forEach { (name, asset) ->
-
+        val pendingAssets = manifest.objects.mapNotNull { (name, asset) ->
             val hash = asset.hash
-
             val folder = hash.substring(0, 2)
+            val objectFile = File(assetsObjectsDir, "$folder/$hash")
 
-            val objectFile =
-                File(
-                    assetsObjectsDir,
-                    "$folder/$hash"
-                )
-
-            if (objectFile.exists())
-                return@forEach
-
-            objectFile.parentFile?.mkdirs()
-
-            val assetUrl =
-                "https://resources.download.minecraft.net/$folder/$hash"
-
-            onProgress("Asset: $name")
-
-            val request =
-                Request.Builder()
-                    .url(assetUrl)
-                    .build()
-
-            val response =
-                httpClient.newCall(request)
-                    .execute()
-
-            if (!response.isSuccessful)
-                return@forEach
-
-            response.body?.byteStream()?.use { input ->
-                FileOutputStream(objectFile).use { output ->
-                    input.copyTo(output)
-                }
+            if (objectFile.exists() && objectFile.length() == asset.size) {
+                return@mapNotNull null
             }
+
+            AssetDownload(
+                name = name,
+                url = "https://resources.download.minecraft.net/$folder/$hash",
+                sha1 = hash,
+                outputFile = objectFile
+            )
+        }
+
+        if (pendingAssets.isEmpty()) {
+            onProgress("Assets already installed")
+            return@withContext
+        }
+
+        onProgress("Downloading ${pendingAssets.size} assets…")
+        downloadInBatches(
+            items = pendingAssets,
+            batchSize = ASSET_PARALLEL_DOWNLOADS,
+            onProgress = onProgress,
+            progressLabel = "assets"
+        ) { item ->
+            downloadFile(
+                url = item.url,
+                outputFile = item.outputFile,
+                expectedSha1 = item.sha1,
+                label = "asset ${item.name}"
+            )
         }
     }
     
@@ -393,6 +393,97 @@ class LauncherRepository(private val context: Context) {
         val versionDir = File(versionsDir, versionId)
         return versionDir.deleteRecursively()
     }
+
+    private suspend fun <T> downloadInBatches(
+        items: List<T>,
+        batchSize: Int,
+        onProgress: (String) -> Unit,
+        progressLabel: String,
+        downloader: suspend (T) -> Unit
+    ) = coroutineScope {
+        val completed = AtomicInteger(0)
+        val failures = mutableListOf<String>()
+
+        items.chunked(batchSize).forEach { batch ->
+            batch.map { item ->
+                async(Dispatchers.IO) {
+                    runCatching { downloader(item) }
+                        .onFailure { error ->
+                            synchronized(failures) {
+                                failures += error.message ?: error::class.java.simpleName
+                            }
+                        }
+
+                    val done = completed.incrementAndGet()
+                    if (done == items.size || done % DOWNLOAD_PROGRESS_LOG_INTERVAL == 0) {
+                        onProgress("Downloaded $done/${items.size} $progressLabel")
+                    }
+                }
+            }.awaitAll()
+        }
+
+        if (failures.isNotEmpty()) {
+            val preview = failures.take(3).joinToString("; ")
+            throw IOException(
+                "Failed to download ${failures.size}/${items.size} $progressLabel. $preview"
+            )
+        }
+    }
+
+    private fun downloadFile(
+        url: String,
+        outputFile: File,
+        expectedSha1: String,
+        label: String
+    ) {
+        outputFile.parentFile?.mkdirs()
+
+        val tempFile = File(outputFile.parentFile, "${outputFile.name}.part")
+        val request = Request.Builder().url(url).build()
+        val response = httpClient.newCall(request).execute()
+
+        response.use { res ->
+            if (!res.isSuccessful) {
+                throw IOException("Failed to download $label: HTTP ${res.code}")
+            }
+
+            val body = res.body ?: throw IOException("Failed to download $label: empty response body")
+            body.byteStream().use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output, DOWNLOAD_BUFFER_SIZE)
+                }
+            }
+        }
+
+        if (!verifySha1(tempFile, expectedSha1)) {
+            tempFile.delete()
+            throw IOException("Failed to verify $label: SHA1 mismatch")
+        }
+
+        if (outputFile.exists() && !outputFile.delete()) {
+            tempFile.delete()
+            throw IOException("Failed to replace existing $label at ${outputFile.absolutePath}")
+        }
+
+        if (!tempFile.renameTo(outputFile)) {
+            tempFile.delete()
+            throw IOException("Failed to save $label to ${outputFile.absolutePath}")
+        }
+    }
+
+    private data class LibraryDownload(
+        val name: String,
+        val url: String,
+        val sha1: String,
+        val outputFile: File
+    )
+
+    private data class AssetDownload(
+        val name: String,
+        val url: String,
+        val sha1: String,
+        val outputFile: File
+    )
 
     private fun verifySha1(file: File, expectedSha1: String): Boolean {
         return try {
